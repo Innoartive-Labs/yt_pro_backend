@@ -1,8 +1,8 @@
 const db = require('../utils/db');
 
 exports.createProductPrice = (req, res) => {
-    const { product_id, purchase_price, selling_price, expected_selling_price } = req.body;
-    db.query('INSERT INTO product_prices (product_id, purchase_price, selling_price, expected_selling_price) VALUES (?, ?, ?, ?)', [product_id, purchase_price, selling_price, expected_selling_price], (err, result) => {
+    const { product_id, selling_price, expected_selling_price } = req.body;
+    db.query('INSERT INTO product_prices (product_id, selling_price, expected_selling_price) VALUES (?, ?, ?)', [product_id, selling_price, expected_selling_price], (err, result) => {
         if (err) return res.status(500).json({ message: 'Database error', error: err });
         res.status(201).json({ id: result.insertId });  
     });
@@ -24,8 +24,8 @@ exports.getProductPriceById = (req, res) => {
 };
 
 exports.updateProductPrice = (req, res) => {
-    const { product_id, purchase_price, selling_price, expected_selling_price } = req.body;
-    db.query('UPDATE product_prices SET product_id=?, purchase_price=?, selling_price=?, expected_selling_price=? WHERE id=? AND is_deleted=0', [product_id, purchase_price, selling_price, expected_selling_price, req.params.id], (err, result) => {
+    const { product_id, selling_price, expected_selling_price } = req.body;
+    db.query('UPDATE product_prices SET product_id=?, selling_price=?, expected_selling_price=? WHERE id=? AND is_deleted=0', [product_id, selling_price, expected_selling_price, req.params.id], (err, result) => {
         if (err) return res.status(500).json({ message: 'Database error', error: err });
         res.json({ message: 'Product price updated' });
     });

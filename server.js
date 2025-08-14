@@ -54,6 +54,7 @@ app.use('/products', require('./routes/products'));
 app.use('/product_dimensions', require('./routes/product_dimensions'));
 app.use('/product_stocks', require('./routes/product_stocks'));
 app.use('/product_prices', require('./routes/product_prices'));
+app.use('/purchase_prices', require('./routes/purchase_prices'));
 app.use('/product_sides', require('./routes/product_sides'));
 app.use('/vehicles', require('./routes/vehicles'));
 app.use('/drivers', require('./routes/drivers'));

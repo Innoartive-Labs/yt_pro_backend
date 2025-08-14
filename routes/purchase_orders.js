@@ -9,6 +9,7 @@ router.use(auth);
 // CRUD operations
 router.post('/', purchaseOrdersController.createPurchaseOrder);
 router.get('/', purchaseOrdersController.getAllPurchaseOrders);
+router.get('/to_receive', purchaseOrdersController.getAllDonePurchaseOrders);
 router.get('/status/:status', purchaseOrdersController.getPurchaseOrdersByStatus);
 router.get('/priority/:priority', purchaseOrdersController.getPurchaseOrdersByPriority);
 router.get('/:id', purchaseOrdersController.getPurchaseOrderById);

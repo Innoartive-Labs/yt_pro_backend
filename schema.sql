@@ -169,7 +169,6 @@ CREATE TABLE product_stocks (
 CREATE TABLE product_prices (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     product_id BIGINT UNSIGNED NOT NULL,
-    purchase_price DECIMAL(10,2) NOT NULL,
     selling_price DECIMAL(10,2) NOT NULL,
     expected_selling_price DECIMAL(10,2) NOT NULL,
     is_deleted TINYINT(1) DEFAULT 0,
@@ -332,8 +331,8 @@ CREATE TABLE received_purchases (
     vehicle_id BIGINT UNSIGNED NULL,
     driver_id BIGINT UNSIGNED NULL,
     remarks TEXT NULL,
-    vehicle_image VARCHAR(255) NULL,
-    delivery_slip_image VARCHAR(255) NULL,
+    vehicle_images TEXT NULL,
+    delivery_slip_images TEXT NULL,
     delivery_charges VARCHAR(255) NULL,
     is_deleted TINYINT(1) DEFAULT 0,
     created_by BIGINT UNSIGNED NOT NULL,
@@ -553,5 +552,19 @@ CREATE TABLE cut_pieces (
     FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id),
     FOREIGN KEY (original_product_id) REFERENCES products(id),
     FOREIGN KEY (cut_warehouse_id) REFERENCES warehouses(id),
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+CREATE TABLE purchase_prices (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    product_id BIGINT UNSIGNED NOT NULL,
+    supplier_id BIGINT UNSIGNED NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    is_deleted TINYINT(1) DEFAULT 0,
+    created_by BIGINT UNSIGNED NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );

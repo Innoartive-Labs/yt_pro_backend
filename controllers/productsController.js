@@ -56,7 +56,7 @@ exports.getProductFullDetails = (req, res) => {
         if (err) return res.status(500).json({ message: 'Database error', error: err });
         if (productResults.length === 0) return res.status(404).json({ message: 'Product not found' });
         const product = productResults[0];
-        // Fetch dimensions, prices, stocks, sides
+        // Fetch dimensions, prices, purchase_prices, stocks, sides
         const queries = [
             new Promise((resolve, reject) => {
                 db.query('SELECT * FROM product_dimensions WHERE product_id = ? AND is_deleted = 0', [productId], (err, results) => {
@@ -65,6 +65,11 @@ exports.getProductFullDetails = (req, res) => {
             }),
             new Promise((resolve, reject) => {
                 db.query('SELECT * FROM product_prices WHERE product_id = ? AND is_deleted = 0', [productId], (err, results) => {
+                    if (err) reject(err); else resolve(results);
+                });
+            }),
+            new Promise((resolve, reject) => {
+                db.query('SELECT pp.*, s.supplier_name FROM purchase_prices pp LEFT JOIN suppliers s ON pp.supplier_id = s.id WHERE pp.product_id = ? AND pp.is_deleted = 0', [productId], (err, results) => {
                     if (err) reject(err); else resolve(results);
                 });
             }),
@@ -80,8 +85,8 @@ exports.getProductFullDetails = (req, res) => {
             })
         ];
         Promise.all(queries)
-            .then(([dimensions, prices, stocks, sides]) => {
-                res.json({ ...product, dimensions, prices, stocks, sides });
+            .then(([dimensions, prices, purchase_prices, stocks, sides]) => {
+                res.json({ ...product, dimensions, prices, purchase_prices, stocks, sides });
             })
             .catch(error => res.status(500).json({ message: 'Database error', error }));
     });

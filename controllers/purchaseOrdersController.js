@@ -55,6 +55,29 @@ exports.getAllPurchaseOrders = (req, res) => {
 
 };
 
+exports.getAllDonePurchaseOrders = (req, res) => {
+    const sql = `
+        SELECT po.*, s.supplier_name, c.company_name, p.product_image, p.category_id, p.company_id, p.product_name, u.user_name as created_by_name
+        FROM purchase_orders po
+        LEFT JOIN suppliers s ON po.supplier_id = s.id
+        LEFT JOIN my_companies c ON po.company_id = c.id
+        LEFT JOIN products p ON po.product_id = p.id
+        LEFT JOIN users u ON po.created_by = u.id
+        WHERE po.is_deleted = 0 AND po.purchase_order_status = 'approved'
+        ORDER BY po.created_at DESC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error', error: err });
+        const purchaseOrders = results.map(purchaseOrder => ({
+            ...purchaseOrder,
+            purchase_order_date: dayjs(purchaseOrder.purchase_order_date).tz('Asia/Karachi').format('YYYY-MM-DD')
+        }));
+        res.json(purchaseOrders);
+    });
+
+};
+
 exports.getPurchaseOrderById = (req, res) => {
     const sql = `
         SELECT po.*, s.supplier_name, c.company_name, p.product_name, u.user_name as created_by_name

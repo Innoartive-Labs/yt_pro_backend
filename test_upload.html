@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .response {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            white-space: pre-wrap;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <h1>File Upload Test for Received Purchases</h1>
+    
+    <form id="uploadForm">
+        <div class="form-group">
+            <label for="vehicle_image">Vehicle Images (Multiple):</label>
+            <input type="file" id="vehicle_image" name="vehicle_image" multiple accept="image/*">
+        </div>
+        
+        <div class="form-group">
+            <label for="delivery_slip_image">Delivery Slip Images (Multiple):</label>
+            <input type="file" id="delivery_slip_image" name="delivery_slip_image" multiple accept="image/*">
+        </div>
+        
+        <div class="form-group">
+            <label for="received_purchase_number">Received Purchase Number:</label>
+            <input type="text" id="received_purchase_number" name="received_purchase_number" value="TEST-001">
+        </div>
+        
+        <div class="form-group">
+            <label for="purchase_order_id">Purchase Order ID:</label>
+            <input type="number" id="purchase_order_id" name="purchase_order_id" value="1">
+        </div>
+        
+        <div class="form-group">
+            <label for="received_date">Received Date:</label>
+            <input type="date" id="received_date" name="received_date" value="2024-01-15">
+        </div>
+        
+        <div class="form-group">
+            <label for="vehicle_id">Vehicle ID:</label>
+            <input type="number" id="vehicle_id" name="vehicle_id" value="1">
+        </div>
+        
+        <div class="form-group">
+            <label for="driver_id">Driver ID:</label>
+            <input type="number" id="driver_id" name="driver_id" value="1">
+        </div>
+        
+        <div class="form-group">
+            <label for="remarks">Remarks:</label>
+            <textarea id="remarks" name="remarks" rows="3">Test upload</textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="delivery_charges">Delivery Charges:</label>
+            <input type="number" id="delivery_charges" name="delivery_charges" value="100" step="0.01">
+        </div>
+        
+        <button type="button" onclick="testDebug()">Test Debug Route</button>
+        <button type="button" onclick="testUploadNoAuth()">Test Upload (No Auth)</button>
+        <button type="button" onclick="testUploadWithAuth()">Test Upload (With Auth)</button>
+        <button type="button" onclick="testCreateReceivedPurchase()">Test Create Received Purchase</button>
+    </form>
+    
+    <div id="response" class="response"></div>
+    
+    <script>
+        function showResponse(data, isError = false) {
+            const responseDiv = document.getElementById('response');
+            responseDiv.textContent = JSON.stringify(data, null, 2);
+            responseDiv.className = 'response ' + (isError ? 'error' : 'success');
+        }
+        
+        function testUploadNoAuth() {
+            const formData = new FormData(document.getElementById('uploadForm'));
+            
+            fetch('/received_purchases/test-upload-no-auth', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                showResponse(data);
+            })
+            .catch(error => {
+                showResponse({ error: error.message }, true);
+            });
+        }
+        
+        function testUploadWithAuth() {
+            const formData = new FormData(document.getElementById('uploadForm'));
+            
+            // You'll need to add your auth token here
+            const token = prompt('Enter your auth token:');
+            if (!token) {
+                showResponse({ error: 'No token provided' }, true);
+                return;
+            }
+            
+            fetch('/received_purchases/test-upload', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                showResponse(data);
+            })
+            .catch(error => {
+                showResponse({ error: error.message }, true);
+            });
+        }
+        
+        function testCreateReceivedPurchase() {
+            const formData = new FormData(document.getElementById('uploadForm'));
+            
+            // You'll need to add your auth token here
+            const token = prompt('Enter your auth token:');
+            if (!token) {
+                showResponse({ error: 'No token provided' }, true);
+                return;
+            }
+            
+            fetch('/received_purchases/', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                showResponse(data);
+            })
+            .catch(error => {
+                showResponse({ error: error.message }, true);
+            });
+        }
+        
+        function testDebug() {
+            const formData = new FormData(document.getElementById('uploadForm'));
+            
+            fetch('/received_purchases/debug', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                showResponse(data);
+            })
+            .catch(error => {
+                showResponse({ error: error.message }, true);
+            });
+        }
+        
+        // Log form data for debugging
+        document.getElementById('uploadForm').addEventListener('change', function() {
+            const formData = new FormData(this);
+            console.log('Form data changed:');
+            for (let [key, value] of formData.entries()) {
+                console.log(key + ':', value);
+            }
+        });
+    </script>
+</body>
+</html>

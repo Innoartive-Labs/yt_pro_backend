@@ -97,6 +97,45 @@ function updateProductStocksForQuantityChange(warehouseId, productId, quantityDi
     );
 }
 
+// Helper function to handle purchase_prices
+function handlePurchasePrices(product_id, supplier_id, rate_received, db, callback, created_by = 1) {
+    if (!supplier_id) {
+        // If no supplier_id, skip purchase_prices handling
+        return callback(null);
+    }
+    
+    // Check if purchase_prices record already exists for this product and supplier
+    db.query(
+        'SELECT id FROM purchase_prices WHERE product_id = ? AND supplier_id = ? AND is_deleted = 0',
+        [product_id, supplier_id],
+        (err, purchasePriceResult) => {
+            if (err) return callback(err);
+            
+            if (purchasePriceResult.length > 0) {
+                // Update existing purchase_prices record
+                db.query(
+                    'UPDATE purchase_prices SET price = ? WHERE product_id = ? AND supplier_id = ? AND is_deleted = 0',
+                    [rate_received, product_id, supplier_id],
+                    (err) => {
+                        if (err) return callback(err);
+                        callback(null);
+                    }
+                );
+            } else {
+                // Insert new purchase_prices record
+                db.query(
+                    'INSERT INTO purchase_prices (product_id, supplier_id, price, created_by) VALUES (?, ?, ?, ?)',
+                    [product_id, supplier_id, rate_received, created_by],
+                    (err) => {
+                        if (err) return callback(err);
+                        callback(null);
+                    }
+                );
+            }
+        }
+    );
+}
+
 exports.createReceivedProduct = (req, res) => {
     const { 
         purchase_order_id, 
@@ -173,15 +212,36 @@ exports.createReceivedProduct = (req, res) => {
                                                     });
                                                 }
                                                 
-                                                // Commit transaction
-                                                db.commit((err) => {
-                                                    if (err) {
-                                                        return db.rollback(() => {
-                                                            res.status(500).json({ message: 'Database error', error: err });
+                                                // Update purchase order status if purchase_order_id exists
+                                                if (purchase_order_id) {
+                                                    updatePurchaseOrderStatus(purchase_order_id, product_id, quantity, (err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        
+                                                        // Commit transaction
+                                                        db.commit((err) => {
+                                                            if (err) {
+                                                                return db.rollback(() => {
+                                                                    res.status(500).json({ message: 'Database error', error: err });
+                                                                });
+                                                            }
+                                                            res.status(201).json({ id: result.insertId, message: 'Received product created successfully' });
                                                         });
-                                                    }
-                                                    res.status(201).json({ id: result.insertId, message: 'Received product created successfully' });
-                                                });
+                                                    });
+                                                } else {
+                                                    // Commit transaction
+                                                    db.commit((err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        res.status(201).json({ id: result.insertId, message: 'Received product created successfully' });
+                                                    });
+                                                }
                                             }
                                         );
                                     } else {
@@ -196,15 +256,36 @@ exports.createReceivedProduct = (req, res) => {
                                                     });
                                                 }
                                                 
-                                                // Commit transaction
-                                                db.commit((err) => {
-                                                    if (err) {
-                                                        return db.rollback(() => {
-                                                            res.status(500).json({ message: 'Database error', error: err });
+                                                // Update purchase order status if purchase_order_id exists
+                                                if (purchase_order_id) {
+                                                    updatePurchaseOrderStatus(purchase_order_id, product_id, quantity, (err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        
+                                                        // Commit transaction
+                                                        db.commit((err) => {
+                                                            if (err) {
+                                                                return db.rollback(() => {
+                                                                    res.status(500).json({ message: 'Database error', error: err });
+                                                                });
+                                                            }
+                                                            res.status(201).json({ id: result.insertId, message: 'Received product created successfully' });
                                                         });
-                                                    }
-                                                    res.status(201).json({ id: result.insertId, message: 'Received product created successfully' });
-                                                });
+                                                    });
+                                                } else {
+                                                    // Commit transaction
+                                                    db.commit((err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        res.status(201).json({ id: result.insertId, message: 'Received product created successfully' });
+                                                    });
+                                                }
                                             }
                                         );
                                     }
@@ -216,6 +297,61 @@ exports.createReceivedProduct = (req, res) => {
             );
         });
     });
+};
+
+// Helper function to update purchase order status
+const updatePurchaseOrderStatus = (purchaseOrderId, productId, receivedQuantity, callback) => {
+    // Get the purchase order details and total ordered quantity for this product
+    db.query(
+        'SELECT po.id, po.purchase_order_status, po.quantity as ordered_quantity FROM purchase_orders po ' +
+        'WHERE po.id = ? AND po.is_deleted = 0',
+        [purchaseOrderId],
+        (err, poResult) => {
+            if (err) return callback(err);
+            if (poResult.length === 0) return callback(new Error('Purchase order not found'));
+            
+            const purchaseOrder = poResult[0];
+            const orderedQuantity = purchaseOrder.ordered_quantity;
+            
+            // Get total received quantity for this product in this purchase order
+            // If receivedQuantity is 0, it means we're deleting, so we need to get the current total from DB
+            db.query(
+                'SELECT COALESCE(SUM(quantity), 0) as total_received FROM received_products ' +
+                'WHERE purchase_order_id = ? AND product_id = ? AND is_deleted = 0',
+                [purchaseOrderId, productId],
+                (err, receivedResult) => {
+                    if (err) return callback(err);
+                    
+                    const totalReceived = receivedResult[0].total_received;
+                    let newStatus = purchaseOrder.status;
+                    
+                    // Determine new status based on received vs ordered quantities
+                    if (totalReceived >= orderedQuantity) {
+                        newStatus = 'received';
+                    } else if (totalReceived > 0) {
+                        newStatus = 'partial-received';
+                    } else {
+                        // No received quantity, reset to original status or 'pending'
+                        newStatus = 'pending';
+                    }
+                    
+                    // Update purchase order status if it changed
+                    if (newStatus !== purchaseOrder.status) {
+                        db.query(
+                            'UPDATE purchase_orders SET purchase_order_status = ? WHERE id = ?',
+                            [newStatus, purchaseOrderId],
+                            (err, updateResult) => {
+                                if (err) return callback(err);
+                                callback(null);
+                            }
+                        );
+                    } else {
+                        callback(null);
+                    }
+                }
+            );
+        }
+    );
 };
 
 exports.getAllReceivedProducts = (req, res) => {
@@ -347,15 +483,36 @@ exports.updateReceivedProduct = (req, res) => {
                                                     });
                                                 }
                                                 
-                                                // Commit transaction
-                                                db.commit((err) => {
-                                                    if (err) {
-                                                        return db.rollback(() => {
-                                                            res.status(500).json({ message: 'Database error', error: err });
+                                                // Update purchase order status if purchase_order_id exists
+                                                if (purchase_order_id) {
+                                                    updatePurchaseOrderStatus(purchase_order_id, product_id, newQuantity, (err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        
+                                                        // Commit transaction
+                                                        db.commit((err) => {
+                                                            if (err) {
+                                                                return db.rollback(() => {
+                                                                    res.status(500).json({ message: 'Database error', error: err });
+                                                                });
+                                                            }
+                                                            res.json({ message: 'Received product updated successfully' });
                                                         });
-                                                    }
-                                                    res.json({ message: 'Received product updated successfully' });
-                                                });
+                                                    });
+                                                } else {
+                                                    // Commit transaction
+                                                    db.commit((err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        res.json({ message: 'Received product updated successfully' });
+                                                    });
+                                                }
                                             });
                                         }
                                     );
@@ -417,15 +574,36 @@ exports.updateReceivedProduct = (req, res) => {
                                                     });
                                                 }
                                                 
-                                                // Commit transaction
-                                                db.commit((err) => {
-                                                    if (err) {
-                                                        return db.rollback(() => {
-                                                            res.status(500).json({ message: 'Database error', error: err });
+                                                // Update purchase order status if purchase_order_id exists
+                                                if (purchase_order_id) {
+                                                    updatePurchaseOrderStatus(purchase_order_id, product_id, newQuantity, (err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        
+                                                        // Commit transaction
+                                                        db.commit((err) => {
+                                                            if (err) {
+                                                                return db.rollback(() => {
+                                                                    res.status(500).json({ message: 'Database error', error: err });
+                                                                });
+                                                            }
+                                                            res.json({ message: 'Received product updated successfully' });
                                                         });
-                                                    }
-                                                    res.json({ message: 'Received product updated successfully' });
-                                                });
+                                                    });
+                                                } else {
+                                                    // Commit transaction
+                                                    db.commit((err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        res.json({ message: 'Received product updated successfully' });
+                                                    });
+                                                }
                                             });
                                         }
                                     );
@@ -468,15 +646,36 @@ exports.updateReceivedProduct = (req, res) => {
                                                 });
                                             }
                                             
-                                            // Commit transaction
-                                            db.commit((err) => {
-                                                if (err) {
-                                                    return db.rollback(() => {
-                                                        res.status(500).json({ message: 'Database error', error: err });
+                                            // Update purchase order status if purchase_order_id exists
+                                            if (purchase_order_id) {
+                                                updatePurchaseOrderStatus(purchase_order_id, product_id, newQuantity, (err) => {
+                                                    if (err) {
+                                                        return db.rollback(() => {
+                                                            res.status(500).json({ message: 'Database error', error: err });
+                                                        });
+                                                    }
+                                                    
+                                                    // Commit transaction
+                                                    db.commit((err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        res.json({ message: 'Received product updated successfully' });
                                                     });
-                                                }
-                                                res.json({ message: 'Received product updated successfully' });
-                                            });
+                                                });
+                                            } else {
+                                                // Commit transaction
+                                                db.commit((err) => {
+                                                    if (err) {
+                                                        return db.rollback(() => {
+                                                            res.status(500).json({ message: 'Database error', error: err });
+                                                        });
+                                                    }
+                                                    res.json({ message: 'Received product updated successfully' });
+                                                });
+                                            }
                                         });
                                     }
                                 );
@@ -492,7 +691,16 @@ exports.updateReceivedProduct = (req, res) => {
                     (err, result) => {
                         if (err) return res.status(500).json({ message: 'Database error', error: err });
                         if (result.affectedRows === 0) return res.status(404).json({ message: 'Received product not found' });
-                        res.json({ message: 'Received product updated successfully' });
+                        
+                        // Update purchase order status if purchase_order_id exists (even if quantity didn't change, product_id might have changed)
+                        if (purchase_order_id) {
+                            updatePurchaseOrderStatus(purchase_order_id, product_id, quantity, (err) => {
+                                if (err) return res.status(500).json({ message: 'Database error', error: err });
+                                res.json({ message: 'Received product updated successfully' });
+                            });
+                        } else {
+                            res.json({ message: 'Received product updated successfully' });
+                        }
                     }
                 );
             }
@@ -506,6 +714,8 @@ exports.updateReceivedProductWithPricing = (req, res) => {
         sale_price,
         expected_selling_price
     } = req.body;
+    
+    const created_by = req.user.id;
     
     const invoice_image = req.file ? req.file.filename : req.body.invoice_image;
     const received_product_id = req.params.id;
@@ -523,7 +733,7 @@ exports.updateReceivedProductWithPricing = (req, res) => {
         
         // First get the received product details
         db.query(
-            'SELECT rp.*, po.id as purchase_order_id FROM received_products rp LEFT JOIN purchase_orders po ON rp.purchase_order_id = po.id WHERE rp.id = ? AND rp.is_deleted = 0',
+            'SELECT rp.*, po.id as purchase_order_id, po.supplier_id FROM received_products rp LEFT JOIN purchase_orders po ON rp.purchase_order_id = po.id WHERE rp.id = ? AND rp.is_deleted = 0',
             [received_product_id],
             (err, receivedProductResult) => {
                 if (err) {
@@ -541,6 +751,7 @@ exports.updateReceivedProductWithPricing = (req, res) => {
                 const receivedProduct = receivedProductResult[0];
                 const product_id = receivedProduct.product_id;
                 const purchase_order_id = receivedProduct.purchase_order_id;
+                const supplier_id = receivedProduct.supplier_id;
                 
                 // Update received product with rate_received and invoice_image
                 db.query(
@@ -565,10 +776,10 @@ exports.updateReceivedProductWithPricing = (req, res) => {
                                 }
                                 
                                 if (priceResult.length > 0) {
-                                    // Update existing product_prices record
+                                    // Update existing product_prices record (only selling prices)
                                     db.query(
-                                        'UPDATE product_prices SET purchase_price = ?, selling_price = ?, expected_selling_price = ? WHERE product_id = ? AND is_deleted = 0',
-                                        [rate_received, sale_price, expected_selling_price, product_id],
+                                        'UPDATE product_prices SET selling_price = ?, expected_selling_price = ? WHERE product_id = ? AND is_deleted = 0',
+                                        [sale_price, expected_selling_price, product_id],
                                         (err, priceUpdateResult) => {
                                             if (err) {
                                                 return db.rollback(() => {
@@ -576,70 +787,39 @@ exports.updateReceivedProductWithPricing = (req, res) => {
                                                 });
                                             }
                                             
-                                            // Update purchase order status to received
-                                            updatePurchaseOrderStatus();
-                                        }
-                                    );
-                                } else {
-                                    // Insert new product_prices record
-                                    db.query(
-                                        'INSERT INTO product_prices (product_id, purchase_price, selling_price, expected_selling_price) VALUES (?, ?, ?, ?)',
-                                        [product_id, rate_received, sale_price, expected_selling_price],
-                                        (err, priceInsertResult) => {
-                                            if (err) {
-                                                return db.rollback(() => {
-                                                    res.status(500).json({ message: 'Database error', error: err });
-                                                });
-                                            }
-                                            
-                                            // Update purchase order status to received
-                                            updatePurchaseOrderStatus();
-                                        }
-                                    );
-                                }
-                            }
-                        );
-                        
-                        function updatePurchaseOrderStatus() {
-                            if (purchase_order_id) {
-                                // Check if all products in this purchase order have been received
-                                db.query(
-                                    `SELECT 
-                                        po.id,
-                                        po.quantity as po_quantity,
-                                        COALESCE(SUM(rp.quantity), 0) as received_quantity
-                                    FROM purchase_orders po
-                                    LEFT JOIN received_products rp ON po.id = rp.purchase_order_id AND rp.is_deleted = 0
-                                    WHERE po.id = ? AND po.is_deleted = 0
-                                    GROUP BY po.id, po.quantity`,
-                                    [purchase_order_id],
-                                    (err, orderResult) => {
-                                        if (err) {
-                                            return db.rollback(() => {
-                                                res.status(500).json({ message: 'Database error', error: err });
-                                            });
-                                        }
-                                        
-                                        if (orderResult.length > 0) {
-                                            const order = orderResult[0];
-                                            let newStatus = 'received';
-                                            
-                                            // If received quantity is less than ordered quantity, set status to partial-received
-                                            if (order.received_quantity < order.po_quantity) {
-                                                newStatus = 'partial-received';
-                                            }
-                                            
-                                            // Update purchase order status
-                                            db.query(
-                                                'UPDATE purchase_orders SET purchase_order_status = ? WHERE id = ?',
-                                                [newStatus, purchase_order_id],
-                                                (err, statusUpdateResult) => {
-                                                    if (err) {
-                                                        return db.rollback(() => {
-                                                            res.status(500).json({ message: 'Database error', error: err });
+                                            // Handle purchase_prices
+                                            handlePurchasePrices(product_id, supplier_id, rate_received, db, (err) => {
+                                                if (err) {
+                                                    return db.rollback(() => {
+                                                        res.status(500).json({ message: 'Database error', error: err });
+                                                    });
+                                                }
+                                                
+                                                // Update purchase order status if purchase_order_id exists
+                                                if (purchase_order_id) {
+                                                    updatePurchaseOrderStatus(purchase_order_id, product_id, receivedProduct.quantity, (err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        
+                                                        // Commit transaction
+                                                        db.commit((err) => {
+                                                            if (err) {
+                                                                return db.rollback(() => {
+                                                                    res.status(500).json({ message: 'Database error', error: err });
+                                                                });
+                                                            }
+                                                            res.json({ 
+                                                                message: 'Received product updated successfully with pricing',
+                                                                received_product_id: received_product_id,
+                                                                product_id: product_id,
+                                                                purchase_order_id: purchase_order_id
+                                                            });
                                                         });
-                                                    }
-                                                    
+                                                    });
+                                                } else {
                                                     // Commit transaction
                                                     db.commit((err) => {
                                                         if (err) {
@@ -650,46 +830,78 @@ exports.updateReceivedProductWithPricing = (req, res) => {
                                                         res.json({ 
                                                             message: 'Received product updated successfully with pricing',
                                                             received_product_id: received_product_id,
-                                                            product_id: product_id,
-                                                            purchase_order_id: purchase_order_id,
-                                                            new_status: newStatus
+                                                            product_id: product_id
                                                         });
                                                     });
                                                 }
-                                            );
-                                        } else {
-                                            // Commit transaction even if no purchase order found
-                                            db.commit((err) => {
+                                            });
+                                        }
+                                    );
+                                } else {
+                                    // Insert new product_prices record
+                                    db.query(
+                                        'INSERT INTO product_prices (product_id, selling_price, expected_selling_price) VALUES (?, ?, ?)',
+                                        [product_id, sale_price, expected_selling_price],
+                                        (err, priceInsertResult) => {
+                                            if (err) {
+                                                return db.rollback(() => {
+                                                    res.status(500).json({ message: 'Database error', error: err });
+                                                });
+                                            }
+                                            
+                                            // Handle purchase_prices
+                                            handlePurchasePrices(product_id, supplier_id, rate_received, db, (err) => {
                                                 if (err) {
                                                     return db.rollback(() => {
                                                         res.status(500).json({ message: 'Database error', error: err });
                                                     });
                                                 }
-                                                res.json({ 
-                                                    message: 'Received product updated successfully with pricing',
-                                                    received_product_id: received_product_id,
-                                                    product_id: product_id
-                                                });
+                                                
+                                                // Update purchase order status if purchase_order_id exists
+                                                if (purchase_order_id) {
+                                                    updatePurchaseOrderStatus(purchase_order_id, product_id, receivedProduct.quantity, (err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        
+                                                        // Commit transaction
+                                                        db.commit((err) => {
+                                                            if (err) {
+                                                                return db.rollback(() => {
+                                                                    res.status(500).json({ message: 'Database error', error: err });
+                                                                });
+                                                            }
+                                                            res.json({ 
+                                                                message: 'Received product updated successfully with pricing',
+                                                                received_product_id: received_product_id,
+                                                                product_id: product_id,
+                                                                purchase_order_id: purchase_order_id
+                                                            });
+                                                        });
+                                                    });
+                                                } else {
+                                                    // Commit transaction
+                                                    db.commit((err) => {
+                                                        if (err) {
+                                                            return db.rollback(() => {
+                                                                res.status(500).json({ message: 'Database error', error: err });
+                                                            });
+                                                        }
+                                                        res.json({ 
+                                                            message: 'Received product updated successfully with pricing',
+                                                            received_product_id: received_product_id,
+                                                            product_id: product_id
+                                                        });
+                                                    });
+                                                }
                                             });
                                         }
-                                    }
-                                );
-                            } else {
-                                // No purchase order associated, just commit the transaction
-                                db.commit((err) => {
-                                    if (err) {
-                                        return db.rollback(() => {
-                                            res.status(500).json({ message: 'Database error', error: err });
-                                        });
-                                    }
-                                    res.json({ 
-                                        message: 'Received product updated successfully with pricing',
-                                        received_product_id: received_product_id,
-                                        product_id: product_id
-                                    });
-                                });
+                                    );
+                                }
                             }
-                        }
+                        );
                     }
                 );
             }
@@ -699,7 +911,7 @@ exports.updateReceivedProductWithPricing = (req, res) => {
 
 exports.deleteReceivedProduct = (req, res) => {
     // First get the received product details to restore warehouse capacity
-    db.query('SELECT quantity, warehouse_id, product_id FROM received_products WHERE id = ? AND is_deleted = 0', [req.params.id], (err, productResult) => {
+    db.query('SELECT quantity, warehouse_id, product_id, purchase_order_id FROM received_products WHERE id = ? AND is_deleted = 0', [req.params.id], (err, productResult) => {
         if (err) return res.status(500).json({ message: 'Database error', error: err });
         if (productResult.length === 0) return res.status(404).json({ message: 'Received product not found' });
         
@@ -736,15 +948,38 @@ exports.deleteReceivedProduct = (req, res) => {
                                 });
                             }
                             
-                            // Commit transaction
-                            db.commit((err) => {
-                                if (err) {
-                                    return db.rollback(() => {
-                                        res.status(500).json({ message: 'Database error', error: err });
+                            // Update purchase order status if purchase_order_id exists
+                            if (product.purchase_order_id) {
+                                // Since we're deleting, we need to recalculate the total received quantity
+                                // We'll pass 0 as the received quantity to trigger a recalculation
+                                updatePurchaseOrderStatus(product.purchase_order_id, product.product_id, 0, (err) => {
+                                    if (err) {
+                                        return db.rollback(() => {
+                                            res.status(500).json({ message: 'Database error', error: err });
+                                        });
+                                    }
+                                    
+                                    // Commit transaction
+                                    db.commit((err) => {
+                                        if (err) {
+                                            return db.rollback(() => {
+                                                res.status(500).json({ message: 'Database error', error: err });
+                                            });
+                                        }
+                                        res.json({ message: 'Received product deleted successfully' });
                                     });
-                                }
-                                res.json({ message: 'Received product deleted successfully' });
-                            });
+                                });
+                            } else {
+                                // Commit transaction
+                                db.commit((err) => {
+                                    if (err) {
+                                        return db.rollback(() => {
+                                            res.status(500).json({ message: 'Database error', error: err });
+                                        });
+                                    }
+                                    res.json({ message: 'Received product deleted successfully' });
+                                });
+                            }
                         });
                     }
                 );

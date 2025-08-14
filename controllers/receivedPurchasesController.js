@@ -4,6 +4,15 @@ const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
 const { processReceivedPurchaseForDailyCounter, reverseReceivedPurchaseForDailyCounter } = require('../utils/dailyCounterUtils');
 
+// Helper function to parse CSV image format back to array
+const parseImageCSV = (imageCSV) => {
+    if (!imageCSV) return [];
+    return imageCSV.split(';').map(item => {
+        const [number, filename] = item.split(',');
+        return { number: parseInt(number), filename };
+    });
+};
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
@@ -20,12 +29,23 @@ exports.createReceivedPurchase = (req, res) => {
     } = req.body;
     
     const created_by = req.user.id;
-    const vehicle_image = req.files?.vehicle_image ? req.files.vehicle_image[0].filename : null;
-    const delivery_slip_image = req.files?.delivery_slip_image ? req.files.delivery_slip_image[0].filename : null;
+    // Process multiple vehicle images and save as CSV with numbered names
+    let vehicle_images = null;
+    if (req.files?.vehicle_image && req.files.vehicle_image.length > 0) {
+        const vehicleImageFiles = req.files.vehicle_image;
+        vehicle_images = vehicleImageFiles.map((file, index) => `${index + 1},${file.filename}`).join(';');
+    }
+    
+    // Process multiple delivery slip images and save as CSV with numbered names
+    let delivery_slip_images = null;
+    if (req.files?.delivery_slip_image && req.files.delivery_slip_image.length > 0) {
+        const deliverySlipImageFiles = req.files.delivery_slip_image;
+        delivery_slip_images = deliverySlipImageFiles.map((file, index) => `${index + 1},${file.filename}`).join(';');
+    }
     
     db.query(
-        'INSERT INTO received_purchases (received_purchase_number, purchase_order_id, received_date, vehicle_id, driver_id, remarks, vehicle_image, delivery_slip_image, delivery_charges, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [received_purchase_number, purchase_order_id, received_date, vehicle_id, driver_id, remarks, vehicle_image, delivery_slip_image, delivery_charges, created_by],
+        'INSERT INTO received_purchases (received_purchase_number, purchase_order_id, received_date, vehicle_id, driver_id, remarks, vehicle_images, delivery_slip_images, delivery_charges, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [received_purchase_number, purchase_order_id, received_date, vehicle_id, driver_id, remarks, vehicle_images, delivery_slip_images, delivery_charges, created_by],
         async (err, result) => {
             if (err) return res.status(500).json({ message: 'Database error', error: err });
             
@@ -70,7 +90,9 @@ exports.getAllReceivedPurchases = (req, res) => {
             if (err) return res.status(500).json({ message: 'Database error', error: err });
             const receivedPurchases = results.map(receivedPurchase => ({
                 ...receivedPurchase,
-                received_date: dayjs(receivedPurchase.received_date).tz('Asia/Karachi').format('YYYY-MM-DD')
+                received_date: dayjs(receivedPurchase.received_date).tz('Asia/Karachi').format('YYYY-MM-DD'),
+                vehicle_images: parseImageCSV(receivedPurchase.vehicle_images),
+                delivery_slip_images: parseImageCSV(receivedPurchase.delivery_slip_images)
             }));
             res.json(receivedPurchases);
         });
@@ -94,7 +116,9 @@ exports.getReceivedPurchaseById = (req, res) => {
         const receivedPurchase = results[0];
         res.json({
             ...receivedPurchase,
-            received_date: dayjs(receivedPurchase.received_date).tz('Asia/Karachi').format('YYYY-MM-DD')
+            received_date: dayjs(receivedPurchase.received_date).tz('Asia/Karachi').format('YYYY-MM-DD'),
+            vehicle_images: parseImageCSV(receivedPurchase.vehicle_images),
+            delivery_slip_images: parseImageCSV(receivedPurchase.delivery_slip_images)
         });
     });
 };
@@ -110,8 +134,19 @@ exports.updateReceivedPurchase = (req, res) => {
         delivery_charges 
     } = req.body;
     
-    const vehicle_image = req.files?.vehicle_image ? req.files.vehicle_image[0].filename : req.body.vehicle_image;
-    const delivery_slip_image = req.files?.delivery_slip_image ? req.files.delivery_slip_image[0].filename : req.body.delivery_slip_image;
+    // Process multiple vehicle images and save as CSV with numbered names
+    let vehicle_images = req.body.vehicle_images; // Keep existing if no new files
+    if (req.files?.vehicle_image && req.files.vehicle_image.length > 0) {
+        const vehicleImageFiles = req.files.vehicle_image;
+        vehicle_images = vehicleImageFiles.map((file, index) => `${index + 1},${file.filename}`).join(';');
+    }
+    
+    // Process multiple delivery slip images and save as CSV with numbered names
+    let delivery_slip_images = req.body.delivery_slip_images; // Keep existing if no new files
+    if (req.files?.delivery_slip_image && req.files.delivery_slip_image.length > 0) {
+        const deliverySlipImageFiles = req.files.delivery_slip_image;
+        delivery_slip_images = deliverySlipImageFiles.map((file, index) => `${index + 1},${file.filename}`).join(';');
+    }
     
     // First get the current delivery charges to calculate the difference
     db.query('SELECT delivery_charges, purchase_order_id FROM received_purchases WHERE id = ? AND is_deleted = 0', [req.params.id], (err, currentResults) => {
@@ -123,8 +158,8 @@ exports.updateReceivedPurchase = (req, res) => {
         const deliveryChargesDifference = newDeliveryCharges - currentDeliveryCharges;
         
         db.query(
-            'UPDATE received_purchases SET received_purchase_number=?, purchase_order_id=?, received_date=?, vehicle_id=?, driver_id=?, remarks=?, vehicle_image=?, delivery_slip_image=?, delivery_charges=? WHERE id=? AND is_deleted=0',
-            [received_purchase_number, purchase_order_id, received_date, vehicle_id, driver_id, remarks, vehicle_image, delivery_slip_image, delivery_charges, req.params.id],
+            'UPDATE received_purchases SET received_purchase_number=?, purchase_order_id=?, received_date=?, vehicle_id=?, driver_id=?, remarks=?, vehicle_images=?, delivery_slip_images=?, delivery_charges=? WHERE id=? AND is_deleted=0',
+            [received_purchase_number, purchase_order_id, received_date, vehicle_id, driver_id, remarks, vehicle_images, delivery_slip_images, delivery_charges, req.params.id],
             async (err, result) => {
                 if (err) return res.status(500).json({ message: 'Database error', error: err });
                 if (result.affectedRows === 0) return res.status(404).json({ message: 'Received purchase not found' });
@@ -223,7 +258,9 @@ exports.getReceivedPurchasesByPurchaseOrder = (req, res) => {
         if (err) return res.status(500).json({ message: 'Database error', error: err });
         const receivedPurchases = results.map(receivedPurchase => ({
             ...receivedPurchase,
-            received_date: dayjs(receivedPurchase.received_date).tz('Asia/Karachi').format('YYYY-MM-DD')
+            received_date: dayjs(receivedPurchase.received_date).tz('Asia/Karachi').format('YYYY-MM-DD'),
+            vehicle_images: parseImageCSV(receivedPurchase.vehicle_images),
+            delivery_slip_images: parseImageCSV(receivedPurchase.delivery_slip_images)
         }));
         res.json(receivedPurchases);
     });
