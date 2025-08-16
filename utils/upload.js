@@ -1,15 +1,18 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
+// Create temporary storage for serverless environment
 function getStorage(folder) {
     return multer.diskStorage({
         destination: function (req, file, cb) {
-            const uploadPath = path.join(__dirname, '../uploads', folder);
-            if (!fs.existsSync(uploadPath)) {
-                fs.mkdirSync(uploadPath, { recursive: true });
+            // Use system temp directory for serverless
+            const tempDir = path.join(os.tmpdir(), 'uploads', folder);
+            if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
             }
-            cb(null, uploadPath);
+            cb(null, tempDir);
         },
         filename: function (req, file, cb) {
             const ext = path.extname(file.originalname);
@@ -25,31 +28,18 @@ function getUploader(folder, fieldName) {
         const fieldsConfig = fieldName.map(name => ({ name, maxCount: 10 }));
         console.log('Configuring Multer with fields:', fieldsConfig);
         
-        // Create a more robust configuration with better error handling
         const upload = multer({ 
             storage: getStorage(folder),
             fileFilter: (req, file, cb) => {
                 console.log('Processing file for field:', file.fieldname);
                 console.log('Expected fields:', fieldName);
                 
-                // Temporarily accept all files to debug
-                console.log('Field accepted (temporary):', file.fieldname);
+                // Accept all files for now
+                console.log('Field accepted:', file.fieldname);
                 cb(null, true);
-                
-                // Original strict checking (commented out for debugging)
-                /*
-                if (fieldName.includes(file.fieldname)) {
-                    console.log('Field accepted:', file.fieldname);
-                    cb(null, true);
-                } else {
-                    console.log('Field rejected:', file.fieldname);
-                    cb(new Error(`Unexpected field: ${file.fieldname}. Expected: ${fieldName.join(', ')}`));
-                }
-                */
             }
         }).fields(fieldsConfig);
         
-        // Wrap the upload middleware to provide better error handling
         return (req, res, next) => {
             upload(req, res, (err) => {
                 if (err instanceof multer.MulterError) {
@@ -75,7 +65,6 @@ function getUploader(folder, fieldName) {
                     });
                 }
                 
-                // Log what we received for debugging
                 console.log('Upload successful - Body fields:', Object.keys(req.body));
                 console.log('Upload successful - File fields:', req.files ? Object.keys(req.files) : 'No files');
                 
@@ -88,4 +77,21 @@ function getUploader(folder, fieldName) {
     }
 }
 
-module.exports = getUploader; 
+// Clean up temporary files
+const cleanupTempFiles = (files) => {
+    if (!files) return;
+    
+    const fileArray = Array.isArray(files) ? files : [files];
+    fileArray.forEach(file => {
+        if (file && file.path && fs.existsSync(file.path)) {
+            try {
+                fs.unlinkSync(file.path);
+                console.log('Cleaned up temp file:', file.path);
+            } catch (error) {
+                console.error('Error cleaning up temp file:', error);
+            }
+        }
+    });
+};
+
+module.exports = { getUploader, cleanupTempFiles }; 
